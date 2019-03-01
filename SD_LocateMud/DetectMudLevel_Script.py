@@ -6,8 +6,6 @@ class PsTrackers( list ):
     """
     定义16个光敏追踪器的类。
     """
-
-
     def __init__(self, timewindow):
         """
         function: 初始化16个光敏追踪器，即(timewindow*6) * 16的空table, 可视为是16个队列组成的table。
@@ -20,10 +18,27 @@ class PsTrackers( list ):
         list.__init__([])  # 继承list类。
         m = timewindow * 6 + 1  # 光敏追踪器的行数, 加1是由于队列的结构。
         n = 16
-        self.trackers = [[[] for i in range(n)] for j in range(m)]
+        self.trackers = [[[] for i in range(n)] for j in range(m)]  # 追踪器初值。
+        self.brokelist = [False for i in range(16)]  #  损坏光敏列表。
         self.rows = m
         self.head = 0  # 光敏追踪器的head。
         self.tail = 0  # 光敏追踪器的tail。
+        self.mean = 0  # 追踪器的均值。
+        self.stddev = 0  #  追踪器的标准差。
+
+
+    def reset(self):
+        """
+        function: 清除追踪器内的所有数据。
+        """
+        n = 16
+        m = self.rows
+        self.trackers = [[[] for i in range(n)] for j in range(m)]  # 追踪器初值。
+        self.brokelist = [False for i in range(16)]  #  损坏光敏列表。
+        self.head = 0  # 光敏追踪器的head。
+        self.tail = 0  # 光敏追踪器的tail。
+        self.mean = 0  # 追踪器的均值。
+        self.stddev = 0  #  追踪器的标准差。
 
 
     def isempty( self ):
@@ -106,42 +121,15 @@ class PsTrackers( list ):
         self.trackers = trackers
 
 
+        def Isbroken(self, psvalues):
+            """
+            function: detecting each photosensitive to see whether is good or broken.
+            :param self:
+            :param psvalues:
+            :return:
+            """
 
 
-
-
-
-
-
-
-
-
-
-def IsPsBroken( psvalues, pstrackers, pointers):
-    """
-    function: Collecting the history photosensitive values for a certain period of time,
-              detecting each photosensitive to see whether is good or broken.
-    :param psvalues: the 16 real-time photosensitive values.
-    :param pstrackers: the table of 16 photosensitive trackers.
-    :param pointers: the table of heads and tails of each tracker.
-    :return: a list of numbers shows which photosensitive is broken.
-    """
-
-
-
-# class CheckPointer( queue.Queue ):
-#     """
-#     功能：纵向跟踪光敏数据的探针。
-#     继承queue.Queue类。
-#
-#     """
-#     def __init__( self, n ):
-#         queue.Queue.__init__(self, n)
-#
-#
-# cp = CheckPointer( 5 )
-# cp.put(5)
-# print(cp.get())
 
 
 def GetMudLvl( inputfile, ws ):
@@ -160,8 +148,10 @@ def GetMudLvl( inputfile, ws ):
                 break
             line = line.split(",")  # 按逗号分割字符串。
             psvalues = [float(value) for value in line]  # 将str转换为float，PhotoSensitive Value。
-            #  实时光敏值存入光敏追踪器中。
+            #  Collecting the photosensitive values.
             pst.enqueue(psvalues)
+            #  检查损坏的光敏。
+            pst.Isbroken(psvalues)
 
 
 
@@ -172,37 +162,6 @@ def GetMudLvl( inputfile, ws ):
         #     ws.append(psvalues)  # worksheet中写入一行光敏数据。
         # wb.save(inputfile[:-3] + "xlsx")  # 保存为与输入数据文件同名的excel文件。
     f.close()
-
-
-
-
-
-
-    # #  设置16个光敏探针。
-    # for i in range(16):
-    #     #  设定16个光敏check point；
-    #     #  每个check point为一个滑动队列，随时间滑动；
-    #     #  记录1小时内该光敏接收点的历史纪录，即360条记录。
-    #     exec("cp%s=queue.Queue(360) " % i, globals())
-    #
-    # for i in range(rows):
-    #     # 从excel表中取出字符串格式的16个光敏数据。
-    #     tmp = table.row_values(i)[2]
-    #     #  光敏数据pd（Photosensitive data）转换格式。
-    #     pd = [float(item) for item in tmp.split(",")]
-    #
-    #     #  数据记录到光敏探针中。
-    #     for j in range(16):
-    #         exec("cp_now = cp%s" % j, globals())
-    #         if cp_now.full():
-    #             cp_now.get()
-    #         else:
-    #             cp_now.put(pd[j])
-    #         print(cp_now.queue)
-    #         break
-
-
-
 
 
 
