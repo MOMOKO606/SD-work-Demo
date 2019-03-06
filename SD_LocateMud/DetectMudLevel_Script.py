@@ -214,7 +214,7 @@ class PsTrackers( list ):
 
         #  case1.queue第一次插满后，又插入一条数据，tail回到0角标的情况。
         if tail == 0:
-            indices = [rows - 1, -1]
+            indices = [rows - 1, 0]
         #  case2.queue不满时。
         elif tail > head:
             indices = [tail - 1, head - 1]
@@ -249,6 +249,9 @@ class PsTrackers( list ):
         brokegratings = self.brokegratings
         trackers = self.trackers
 
+        #  定义常量
+        STANDARD_STDDEV = 250  # 0-900随机分布的标准差。
+
         #  首先要知道从近到远的历史数据顺序，
         #  即通过GetIndices函数得到从tail到head的角标。
         indices = self.GetIndices()
@@ -278,13 +281,13 @@ class PsTrackers( list ):
                     #  Sentinel，已在短周期被定位为True的不再检测。
                     if brokelist[j]:
                         continue
-                    #  标准差大于150,波动较大，疑似随机值：
-                    if self.stddev[j] >= 150:
+                    #  标准差大于STANDARD_STDDEV,波动较大，疑似随机值：
+                    if self.stddev[j] >= STANDARD_STDDEV:
                         #  检查时间窗内，追踪器数据是否单调递增或递减。
                         #  单调递增，则由泥变水；
                         #  单调递减，则由水变泥。
                         delta = 0.0
-                        for i in range(start, end, -1):
+                        for i in range(start, end + 1, -1):
                             delta += trackers[i][j] - trackers[i - 1][j]
                         #  变化值相加后取绝对值，距离900较远说明是随机值，即光敏损坏。
                         if abs(delta) < 700:
@@ -329,8 +332,8 @@ class PsTrackers( list ):
                     #  Sentinel，已在短周期被定位为True的不再检测。
                     if brokelist[j]:
                         continue
-                    #  标准差大于150，波动较大，疑似随机值：
-                    if self.stddev[j] >= 150:
+                    #  标准差大于STANDARD_STDDEV，波动较大，疑似随机值：
+                    if self.stddev[j] >= STANDARD_STDDEV:
                         #  检查时间窗内，追踪器数据是否单调递增或递减。
                         #  单调递增，则由泥变水；
                         #  单调递减，则由水变泥。
@@ -360,41 +363,42 @@ def FuzzyInterval(brokelist, brokegratings, psvalues):
     :return: 泥位位于的光敏区间。
     """
 
-    #  从最左端开始搜索泥位区间的左边界。
-    j = 0
-    while True:
-        #  sentinel, j光敏损坏。
-        if brokelist[j]:
-            l = j + 1
+    #  规则：
+    #  （1）数据由左向右表示由低到高，即i = 0表示最低处的光敏，i = 15表示最高处的光敏；
+    #  （2）泥只可能由下向上，即0是从psvalues数组的左侧开始，特殊情况为最高处有浮泥，浮泥较薄（即最右端一点为0）；
+    #  （3）光敏值小于50为泥；
+    #  （4）光敏值位于[50,200]为泥水混合物；
+    #  （5）光敏值大于200为水；
+    #  （6）光敏有损坏则右移一位。
+    for i in range(16):
+        #  如果i处的光敏有损坏，则右移动一位。
+        if brokelist[i] or brokegratings[i]:
             continue
-
-        #  sentinel, j光栅损坏。
-        if brokegratings[j]:
-            l = j
-            continue
-
-        if abs(psvalues[j + 1] - psvalues[j]) >= 200:
-            l = j
+        #  确定纯泥界面:
+        if psvalues[i] >= 50:
+            #  如果最低端光敏值即大于50，则认为纯泥界面在最低光敏处。
+            if i == 0:
+                l = 0
+            else:
+                l = i - 1
             break
-        j += 1
+        #  所有光敏值都小于50。
+        l = 15
 
-    #  从最右端开始搜索泥位区间的右边界。
-    j = 15
-    while True:
-        #  sentinel, j光敏损坏。
-        if brokelist[j]:
-            r = j - 1
+    for i in range(l, 16):
+        #  如果i处的光敏有损坏，则右移动一位。
+        if brokelist[i] or brokegratings[i]:
             continue
-
-        #  sentinel, j光栅损坏。
-        if brokegratings[j]:
-            r = j
-            continue
-
-        if abs(psvalues[j - 1] - psvalues[j]) >= 200:
-            r = j
+        #  确定泥水混合物界面：
+        if psvalues[i] >= 200:
+            #  如果最低端光敏值即大于200，则认为泥水混合物界面在最低光敏处。
+            if i == 0:
+                r = 0
+            else:
+                r = i
             break
-        j -= 1
+        #  所有光敏值都小于200。
+        r = 15
     return [l, r]
 
 
@@ -410,13 +414,17 @@ def GetMudLvl( inputfile, ws ):
             ###  测试用  ###
             timecount += 1
             ###  测试用  ###
-            #  读入光敏数据。
+
+            # 读入光敏数据。
             line = f.readline()  # 读取一行光敏数据（str）。
             #  EOF Sentinel.
             if line == '':
                 break
+            line = line.strip('\n')  # 删除换行符。
             line = line.split(",")  # 按逗号分割字符串。
-            psvalues = [float(value) for value in line]  # 将str转换为float，PhotoSensitive Value。
+            #  将str转换为float，PhotoSensitive Value。
+            #  "000"表示1000。
+            psvalues = [float(str) if str != "000" else 1000 for str in line]
             #  Collecting the photosensitive values.
             pst.enqueue(psvalues)
             #  纵向检测：检查损坏的光敏。
@@ -424,6 +432,8 @@ def GetMudLvl( inputfile, ws ):
             brokegratings = pst.brokegratings
             #  横向检测：计算泥位区间。
             mudinterval = FuzzyInterval(brokelist, brokegratings, psvalues)
+
+            print(timecount,mudinterval)
             #  光敏数据写入excel，用于人工检查。
             ws.append(psvalues)  # worksheet中写入一行光敏数据。
             for j in range(16):
@@ -436,7 +446,7 @@ def GetMudLvl( inputfile, ws ):
                     ws.cell(row = timecount, column = j + 1).fill = \
                         sty.PatternFill(fill_type = "solid", fgColor = "007A378B")
             #  将泥位区间标记为红色。
-            for i in mudinterval:
+            for i in range(mudinterval[0], mudinterval[1] + 1):
                 ws.cell(row = timecount, column = i + 1).fill = \
                     sty.PatternFill(fill_type = "solid", fgColor = "00FF0000")
         wb.save(inputfile[:-3] + "xlsx")  # 保存为与输入数据文件同名的excel文件。
