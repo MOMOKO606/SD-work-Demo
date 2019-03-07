@@ -370,6 +370,9 @@ def FuzzyInterval(brokelist, brokegratings, psvalues):
     #  （4）光敏值位于[50,200]为泥水混合物；
     #  （5）光敏值大于200为水；
     #  （6）光敏有损坏则右移一位。
+    
+    #  所有光敏值都小于50。
+    l = 15
     for i in range(16):
         #  如果i处的光敏有损坏，则右移动一位。
         if brokelist[i] or brokegratings[i]:
@@ -386,9 +389,10 @@ def FuzzyInterval(brokelist, brokegratings, psvalues):
                 else:  # 如果上一位光敏没有损坏。
                     l = i - 1
             break
-        #  所有光敏值都小于50。
-        l = 15
 
+
+    #  所有光敏值都小于200。
+    r = 15
     for i in range(l, 16):
         #  如果i处的光敏有损坏，则右移动一位。
         if brokelist[i] or brokegratings[i]:
@@ -401,8 +405,7 @@ def FuzzyInterval(brokelist, brokegratings, psvalues):
             else:
                 r = i
             break
-        #  所有光敏值都小于200。
-        r = 15
+
     return [l, r]
 
 
