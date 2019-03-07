@@ -380,7 +380,11 @@ def FuzzyInterval(brokelist, brokegratings, psvalues):
             if i == 0:
                 l = 0
             else:
-                l = i - 1
+                # 如果上一位光敏损坏。
+                if brokelist[i - 1] or brokegratings[i - 1]:
+                    l = i
+                else:  # 如果上一位光敏没有损坏。
+                    l = i - 1
             break
         #  所有光敏值都小于50。
         l = 15
@@ -402,10 +406,21 @@ def FuzzyInterval(brokelist, brokegratings, psvalues):
     return [l, r]
 
 
-def GetMudLvl( inputfile, ws ):
+def GetMudLvl( inputfile ):
+    """
+    function: 根据光敏追踪器类，预处理后的历史光敏数据，计算从泥到水的区间。
+    :param inputfile: 预处理后的历史光敏数据，文本文件。
+    :return: 显示全部历史光敏数据的excel文件，用红色标出泥水区间，绿色为光栅损坏的光敏，紫色为损坏的（不可靠）光敏值。
+    """
+
     #  新建并初始化光敏追踪器。
     timewindow = 3  # 设定追踪器时间窗长，单位为分钟，最小值为1，建议选取3-5。
     pst = PsTrackers( timewindow )
+
+    #  打开一个excel文件， 用于写入所有的光敏数据。
+    wb = Workbook()  # 在内存中创建一个workbook对象，而自动创建一个worksheet。
+    ws = wb.active  # 获取当前活跃的worksheet，默认就是第一个worksheet。
+
     with open( inputfile ) as f:
         ###  测试用  ###
         timecount = 0
@@ -414,6 +429,9 @@ def GetMudLvl( inputfile, ws ):
             ###  测试用  ###
             timecount += 1
             ###  测试用  ###
+
+            if timecount == 49927:
+                print("Bianlong")
 
             # 读入光敏数据。
             line = f.readline()  # 读取一行光敏数据（str）。
@@ -434,6 +452,7 @@ def GetMudLvl( inputfile, ws ):
             mudinterval = FuzzyInterval(brokelist, brokegratings, psvalues)
 
             print(timecount,mudinterval)
+
             #  光敏数据写入excel，用于人工检查。
             ws.append(psvalues)  # worksheet中写入一行光敏数据。
             for j in range(16):
@@ -454,12 +473,11 @@ def GetMudLvl( inputfile, ws ):
 
 
 """
-功能：根据光敏数据，定位随时间变化的泥位点。
+脚本功能：根据历史数据库中的光敏数据，定位随时间变化的泥位点。
 
 Step0.预处理光敏数据：
-      选出一个池子，某段时间内的16组光敏数据，保存为txt文档，默认名：PreData02.txt。
-      e.g. 选用db_181013/sanchang_db数据中的5号池，共262943个数（大约1个月）。
-
+      (1)选出一个池子，某段时间内的16组光敏数据，保存为txt文档.
+      e.g. 选用db_181013/sanchang_db数据中的5号池，共262943个数（大约1个月），默认命名为PreData02.txt。
 Step1.定义光敏追踪器类，纵向追踪历史数据。
 Step2.首先通过光敏追踪器过滤掉当前时刻的问题光敏，问题光敏有2种情况：
       （1）光敏彻底坏掉，跳随机值。
@@ -469,17 +487,16 @@ Step3.跟踪污泥区间，连续的污泥区间应该是连续的。
 """
 
 start = time.time()  # 程序开始时间。
-#  预处理后的，光敏数据文件名。
-inputfile = "PreData02.txt"
 
-#  打开一个excel文件， 用于写入所有的光敏数据。
-wb = Workbook()  # 在内存中创建一个workbook对象，而自动创建一个worksheet。
-ws = wb.active  # 获取当前活跃的worksheet，默认就是第一个worksheet。
+#  预处理后的光敏数据文件名。
+inputfile = "PreDataFull.txt"
 
-
-GetMudLvl( inputfile, ws )
+#  调用函数计算泥位。
+#  输出excel文件，用颜色标识泥位区间，损坏的光敏。
+GetMudLvl( inputfile )
 
 end = time.time()  # 程序结束时间。
-print(end-start)  # 程序运行时间，单位为秒。
+#  显示程序的运行时间，单位为秒。
+print(end-start)
 
 
