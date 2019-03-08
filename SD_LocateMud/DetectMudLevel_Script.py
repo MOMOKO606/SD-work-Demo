@@ -370,7 +370,7 @@ def FuzzyInterval(brokelist, brokegratings, psvalues):
     #  （4）光敏值位于[50,200]为泥水混合物；
     #  （5）光敏值大于200为水；
     #  （6）光敏有损坏则右移一位。
-    
+
     #  所有光敏值都小于50。
     l = 15
     for i in range(16):
