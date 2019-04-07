@@ -174,11 +174,12 @@ class PsTrackers( list ):
             #  检查光敏是否完全损坏。
             #  1分钟以上检测(长周期检测)。
             for j in range(16):
-                #  Sentinel，已定位为True的不再检测。
-                if brokelist[j]:
+                #  如果被测为异常1，则不再重测。
+                #  设备维修后请reset光敏追踪器。
+                if self.brokelist[j]:
                     continue
-                #  标准差接近STANDARD_STDDEV,波动较大，疑似随机值：
-                if abs(self.stddev[j] - STANDARD_STDDEV) < 50:
+                #  标准差大于STANDARD_STDDEV,波动较大，疑似随机值：
+                if self.stddev[j] > STANDARD_STDDEV:
                     #  检查时间窗内，追踪器数据是否单调递增或递减。
                     #  单调递增，则由泥变水；
                     #  单调递减，则由水变泥。
@@ -191,6 +192,9 @@ class PsTrackers( list ):
                     #  泥位快速升降。
                     else:
                         brokelist[j] = False
+                #  波动较小，数据正常。
+                else:
+                    brokelist[j] = False
         #  对应GetIndices函数中的case3.
         else:
             start1 = indices[0][0]
@@ -200,11 +204,12 @@ class PsTrackers( list ):
 
             #  1分钟以上检测(长周期检测)。
             for j in range(16):
-                #  Sentinel，已被定位为True的不再检测。
-                if brokelist[j]:
+                #  如果被测为异常1，则不再重测。
+                #  设备维修后请reset光敏追踪器。
+                if self.brokelist[j]:
                     continue
-                #  标准差接近STANDARD_STDDEV,波动较大，疑似随机值：
-                if abs(self.stddev[j] - STANDARD_STDDEV) < 50:
+                #  标准差大于STANDARD_STDDEV,波动较大，疑似随机值：
+                if self.stddev[j] > STANDARD_STDDEV:
                     #  检查时间窗内，追踪器数据是否单调递增或递减。
                     #  单调递增，则由泥变水；
                     #  单调递减，则由水变泥。
@@ -219,6 +224,9 @@ class PsTrackers( list ):
                     #  泥位快速升降。
                     else:
                         brokelist[j] = False
+                #  波动较小，数据正常。
+                else:
+                    brokelist[j] = False
         #  更新仪器损坏表。
         self.brokelist = brokelist
         return brokelist
@@ -252,7 +260,7 @@ class PsTrackers( list ):
         :return:
         """
 
-        GRATING_DELTA = 150 # 光敏值间隔。
+        GRATING_DELTA = 200 # 光敏值间隔。
         #  base case: 已遍历完。
         if start > end:
             return res
@@ -436,7 +444,7 @@ def GetMudLvl( inputfile ):
     """
 
     #  新建并初始化光敏追踪器。
-    timewindow = 3  # 设定追踪器时间窗长，单位为分钟，最小值为1，建议选取3-5。
+    timewindow = 6  # 设定追踪器时间窗长，单位为分钟，最小值为1，建议选取3-5。
     pst = PsTrackers( timewindow )
 
     #  打开一个excel文件， 用于写入所有的光敏数据。
@@ -451,6 +459,9 @@ def GetMudLvl( inputfile ):
             ###  测试用  ###
             timecount += 1
             ###  测试用  ###
+            
+            if timecount == 1853:
+                print("bianlong")
 
             # 读入光敏数据。
             line = f.readline()  # 读取一行光敏数据（str）。
@@ -508,7 +519,7 @@ Step3.跟踪污泥区间，连续的污泥区间应该是连续的。
 start = time.time()  # 程序开始时间。
 
 #  预处理后的光敏数据文件名。
-inputfile = "fac5_pool12.txt"
+inputfile = "fac4_pool13.txt"
 
 #  调用函数计算泥位。
 #  输出excel文件，用颜色标识泥位区间，损坏的光敏。
