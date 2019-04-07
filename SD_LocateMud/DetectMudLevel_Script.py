@@ -101,22 +101,11 @@ class PsTrackers( list ):
         res = [trackers[head][j] for j in range(16)]
         trackers[head] = [[] for j in range(16)]
 
-        #  检测弹出的数据是否包含光栅损坏的光敏。
+        #  检测弹出的数据是属于异常2的光敏。
         for j in range(16):
-            if j == 0:  # 左边界情况。
-                left = True
-                right = (res[j + 1] - res[j]) > 150
-            elif j == 15:  # 右边界情况。
-                right = True
-                left = (res[j - 1] - res[j]) > 150
-            else:
-                left = (res[j - 1] - res[j]) > 150
-                right = (res[j + 1] - res[j]) > 150
-            #  当角标为j的光敏值小于左右两边光敏值时,疑似光栅损坏；
-            #  因为是弹出该数据，所以对应gratingcount减1。
-            if left and right:
+            if self.brokegratings[j]:
+                #  因为是弹出该数据，所以对应gratingcount减1。
                 self.gratingcount[j] -= 1
-
         #  修改head的位置。
         if head == rows - 1:
             head = 0
@@ -127,6 +116,191 @@ class PsTrackers( list ):
         self.head = head
         self.trackers = trackers
         return res
+
+
+
+    def GetIndices(self):
+        """
+        function: 得到从tail向head方向的角标indices.
+        :return: indices数组。
+        """
+        #  读取参数。
+        head = self.head
+        tail = self.tail
+        rows = self.rows
+
+        #  case1.queue第一次插满后，又插入一条数据，tail回到0角标的情况。
+        if tail == 0:
+            indices = [rows - 1, 0]
+        #  case2.queue不满时。
+        elif tail > head:
+            indices = [tail - 1, head - 1]
+        #  case3.head > tail，除case1外，queue插满时还在继续插入数据的情况。
+        else:
+            indices = [[tail - 1, -1], [rows - 1, head - 1]]
+        return indices
+
+
+
+    def Isbroken(self):
+        """
+        function: detecting each photosensitive to see whether is good or broken.
+
+        异常1.光敏完全损坏。
+        检测：检查追踪器中的标准差。如果光敏损坏，会产生0到1023的随机值，其随机分布标准差在295左右。
+             所以当追踪器中的标准差接近250时，说明该光敏值是随机的，即光敏损坏。
+             但是，如果泥位迅速增高或下降时，也有可能产生0，200，400，600，... , 900的情况。
+             这种情况的标准差较大，但其两两光敏值的差值是同一方向的，也就是说delta差值相加应该在900或-900左右。
+             所以通过delta值相加来判断是否属于该情况。
+        return: 完全损坏的光敏列表brokelist。
+        """
+
+        #  载入数据。
+        rows = self.rows
+        brokelist = self.brokelist
+        trackers = self.trackers
+
+        #  定义常量
+        STANDARD_STDDEV = 250  # 0-1023随机分布的标准差约等于295。
+
+        #  首先要知道从近到远的历史数据顺序，
+        #  即通过GetIndices函数得到从tail到head的角标。
+        indices = self.GetIndices()
+        #  对应GetIndices函数中的case1和case2.
+        if len(np.array(indices).shape) == 1:
+            start = indices[0]
+            end = indices[1]
+
+            #  检查光敏是否完全损坏。
+            #  1分钟以上检测(长周期检测)。
+            for j in range(16):
+                #  Sentinel，已定位为True的不再检测。
+                if brokelist[j]:
+                    continue
+                #  标准差接近STANDARD_STDDEV,波动较大，疑似随机值：
+                if abs(self.stddev[j] - STANDARD_STDDEV) < 50:
+                    #  检查时间窗内，追踪器数据是否单调递增或递减。
+                    #  单调递增，则由泥变水；
+                    #  单调递减，则由水变泥。
+                    delta = 0.0
+                    for i in range(start, end + 1, -1):
+                        delta += trackers[i][j] - trackers[i - 1][j]
+                    #  变化值相加后取绝对值，距离900较远说明是随机值，即光敏损坏。
+                    if abs(delta) < 700:
+                        brokelist[j] = True
+                    #  泥位快速升降。
+                    else:
+                        brokelist[j] = False
+        #  对应GetIndices函数中的case3.
+        else:
+            start1 = indices[0][0]
+            end1 = indices[0][1]
+            start2 = indices[1][0]
+            end2 = indices[1][1]
+
+            #  1分钟以上检测(长周期检测)。
+            for j in range(16):
+                #  Sentinel，已被定位为True的不再检测。
+                if brokelist[j]:
+                    continue
+                #  标准差接近STANDARD_STDDEV,波动较大，疑似随机值：
+                if abs(self.stddev[j] - STANDARD_STDDEV) < 50:
+                    #  检查时间窗内，追踪器数据是否单调递增或递减。
+                    #  单调递增，则由泥变水；
+                    #  单调递减，则由水变泥。
+                    delta = 0.0
+                    for i in range(start1,end1 + 1, -1):
+                        delta += trackers[i][j] - trackers[i - 1][j]
+                    for i in range(start2,end2 + 1, -1):
+                        delta += trackers[i][j] - trackers[i - 1][j]
+                    #  变化值相加后取绝对值，距离900较远说明是随机值，即光敏损坏。
+                    if abs(delta) < 700:
+                        brokelist[j] = True
+                    #  泥位快速升降。
+                    else:
+                        brokelist[j] = False
+        #  更新仪器损坏表。
+        self.brokelist = brokelist
+        return brokelist
+
+
+
+    def AddBound(self, psvalues):
+        """
+        function: 对16个光敏数据的首位添加边界，最左侧添加0，最右侧添加900。
+        :return: 添加边界后的16+2个光敏数据。
+        """
+
+        n = len(psvalues)
+        res = [0.0 for i in range(0, n + 2)]
+        res[n + 1] = 900
+        for i in range(1, n + 1):
+            res[i] = psvalues[i - 1]
+        return res
+
+
+
+    def L2Rmoving(self, start, end, leftkey, A, res):
+        """
+        function: 从start向end前进，并鉴别每个数据是否发生异常。
+        :param start: 输入数据A的起始角标。
+        :param end: 输入数据A的终点角标。
+        :param leftkey: start左侧，即上一阶段的最后一个正常值。
+        :param A: 输入数据。
+        :param res: 对应输入数据A的bool数组，True表示该点数据正常，False表示该点数据存在异常2的情况。
+                    异常2包括：各别光栅损坏，浮泥，泥中含较多的水（简称含水泥）。
+        :return:
+        """
+
+        GRATING_DELTA = 150 # 光敏值间隔。
+        #  base case: 已遍历完。
+        if start > end:
+            return res
+
+        #  循环初值。
+        i = start
+        while True:
+            #  未到达边界时，i或i + 1处光敏发生异常1, 右移。
+            if i < 16:
+                if self.brokelist[i - 1] is True or self.brokelist[i] is True:
+                    i += 1
+                    continue
+            #  到达边界时，且i处光敏发生异常1，跳出循环。
+            else:
+                if self.brokelist[i - 1] is True:
+                    break
+
+            #  i和i + 1处光敏没有发生异常1。
+            rightdelta = A[i] - A[i + 1]
+            #  右侧数据与当前数据相差不大, 且没有到右边界，则右移。
+            if abs(rightdelta) <= GRATING_DELTA and i < end:
+                i += 1
+            #  否则跳出循环。
+            else:
+                break
+
+        #  右侧数据发生跳跃，鉴别该阶段数据是否正常。
+        if abs(rightdelta) > GRATING_DELTA:
+            leftdelta = A[i] - leftkey
+            #  发生相变的正常情况。
+            if abs(leftdelta) <= GRATING_DELTA or leftdelta * rightdelta < 0:
+                for j in range(start, i + 1):
+                    res[j] = False
+                leftkey = A[i]
+            #  可能发生异常2。
+            else:
+                #  发生异常2。
+                if i - start + 1 < 7:
+                    for j in range(start, i + 1):
+                        res[j] = True
+                        self.gratingcount[i - 1] += 1
+                #  不可能连坏7个。
+                else:
+                    for j in range(start, i + 1):
+                        res[j] = False
+                    leftkey = A[i]
+        #  跳转到下一阶段。
+        return self.L2Rmoving(i + 1, end, leftkey, A, res)
 
 
 
@@ -165,27 +339,6 @@ class PsTrackers( list ):
             tail += 1
         self.tail = tail  # 更新属性。
 
-        #  检测插入的数据是否包含光栅损坏的光敏。
-        for j in range(16):
-            if j == 0:  # 左边界情况。
-                left = True
-                right = (psvalues[j + 1] - psvalues[j]) > 150
-            elif j == 15:  # 右边界情况。
-                right = True
-                left = (psvalues[j - 1] - psvalues[j]) > 150
-            else:
-                left = (psvalues[j - 1] - psvalues[j]) > 150
-                right = (psvalues[j + 1] - psvalues[j]) > 150
-            #  当角标为j的光敏值小于左右两边光敏值时,疑似光栅损坏；
-            #  因为是插入该数据，所以对应gratingcount加1
-            if left and right:
-                self.gratingcount[j] += 1
-                #  在历史数据中，光栅疑似故障的比例大于等于83%，则认为光栅损坏。
-                if self.gratingcount[j] / self.count >= 5/6:
-                    self.brokegratings[j] = True
-                else:
-                    self.brokegratings[j] = False
-
         #  更新stddev。
         #  遍历追踪器。
         for j in range(16):
@@ -196,161 +349,31 @@ class PsTrackers( list ):
                     continue
                 tmp += (trackers[i][j] - self.mean[j]) ** 2
             tmp /= self.count
-            self.stddev[j] = math.sqrt( tmp )
-
-        return popedvalue  # 返回弹出的一行数据
-
-
-
-    def GetIndices(self):
-        """
-        function: 得到从tail向head方向的角标indices.
-        :return: indices数组。
-        """
-        #  读取参数。
-        head = self.head
-        tail = self.tail
-        rows = self.rows
-
-        #  case1.queue第一次插满后，又插入一条数据，tail回到0角标的情况。
-        if tail == 0:
-            indices = [rows - 1, 0]
-        #  case2.queue不满时。
-        elif tail > head:
-            indices = [tail - 1, head - 1]
-        #  case3.head > tail，除case1外，queue插满时还在继续插入数据的情况。
-        else:
-            indices = [[tail - 1, -1], [rows - 1, head - 1]]
-        return indices
-
-
-
-    def Isbroken(self):
-        """
-        function: detecting each photosensitive to see whether is good or broken.
-
-        光敏完全损坏：
-        检查1.检测当前光敏值与10s前光敏值的差值，大于380认为是随机值，即光敏损坏。
-        检查2.检查追踪器中的标准差。如果光敏损坏，会产生0到1000的随机值，其随机分布标准差在280左右。
-             所以当追踪器中的标准差接近280时，说明该光敏值是随机的，即光敏损坏。
-             但是，如果泥位迅速增高或下降时，也有可能产生0，200，400，600，... , 900的情况。
-             这种情况的标准差较大，但其两两光敏值的差值是同一方向的，也就是说delta差值相加应该在900或-900左右。
-             所以通过delta值相加来判断是否属于该情况。
-
-        光敏中有光栅损坏：
-        检测是否有值总低于左右两边的光敏值。
-
-        return: 完全损坏的光敏列表brokelist，有光栅损坏的光敏列表brokegratings.
-        """
-
-        #  载入数据。
-        rows = self.rows
-        brokelist = self.brokelist
-        brokegratings = self.brokegratings
-        trackers = self.trackers
-
-        #  定义常量
-        STANDARD_STDDEV = 250  # 0-900随机分布的标准差。
-
-        #  首先要知道从近到远的历史数据顺序，
-        #  即通过GetIndices函数得到从tail到head的角标。
-        indices = self.GetIndices()
-        #  对应GetIndices函数中的case1和case2.
-        if len(np.array(indices).shape) == 1:
-            start = indices[0]
-            end = indices[1]
-
-            #  检查光敏是否完全损坏。
-
-            #  caseA:1分钟内速测(短周期检测)。
-            #  当前值与10s前的值，delta超过380，则光敏损坏。
-            for j in range(16):
-                now = trackers[start][j]
-                previous = trackers[start - 1][j]
-                #  trackers中只存了一个值的情况。
-                if previous == []:
-                    previous = now
-                if abs(now - previous) >= 380:
-                    brokelist[j] = True
+            self.stddev[j] = math.sqrt(tmp)
+        #  检测插入的数据是否包含异常1 & 2。
+        #  异常1包括：光敏彻底损坏，数值在0到1023之间随机跳动。
+        #  检查并更新数据异常1的情况。
+        self.brokelist = self.Isbroken()
+        #  异常2包括：各别光栅损坏，浮泥，泥中含较多的水（简称含水泥）。
+        #  检查并更新数据异常2的情况。
+        #  首先对16个光敏数据的首尾添加边界。
+        psvtmp = self.AddBound(psvalues)
+        #  其次构造1*18的bool数组，存放异常2的检测结果。
+        abnor_tmp = [False for i in range(18)]
+        #  遍历1*18个光敏数据，检查是否有异常2情况。
+        abnor_tmp = self.L2Rmoving(1, 16, 0, psvtmp, abnor_tmp)
+        #  去掉首尾边界。
+        for i in range(1, 17):
+            self.brokegratings[i - 1] = abnor_tmp[i]
+        #  Sentinel
+        #  在历史数据中，异常2的比例大于等于83%，则认为是真异常2。
+        for j in range(16):
+            if self.brokegratings[j]:
+                if self.gratingcount[j] / self.count >= 5 / 6:
+                    self.brokegratings[j] = True
                 else:
-                    brokelist[j] = False
-
-            #  caseB:1分钟以上检测(长周期检测)。
-            if rows > 6:
-                for j in range(16):
-                    #  Sentinel，已在短周期被定位为True的不再检测。
-                    if brokelist[j]:
-                        continue
-                    #  标准差大于STANDARD_STDDEV,波动较大，疑似随机值：
-                    if self.stddev[j] >= STANDARD_STDDEV:
-                        #  检查时间窗内，追踪器数据是否单调递增或递减。
-                        #  单调递增，则由泥变水；
-                        #  单调递减，则由水变泥。
-                        delta = 0.0
-                        for i in range(start, end + 1, -1):
-                            delta += trackers[i][j] - trackers[i - 1][j]
-                        #  变化值相加后取绝对值，距离900较远说明是随机值，即光敏损坏。
-                        if abs(delta) < 700:
-                            brokelist[j] = True
-                        #  泥位快速升降。
-                        else:
-                            brokelist[j] = False
-        #  对应GetIndices函数中的case3.
-        else:
-
-            start1 = indices[0][0]
-            end1 = indices[0][1]
-            start2 = indices[1][0]
-            end2 = indices[1][1]
-
-            #  caseA:1分钟内速测(短周期检测)。
-            #  当前值与10s前的值，delta超过380，则光敏损坏。
-            #  横向检查16个追踪器。
-            for j in range(16):
-                tmplist = []
-                #  纵向从追踪器里找最近的两条数据。
-                #  可优化，只读2条。
-                for i in range(start1,end1,-1):
-                    tmplist.append(trackers[i][j])
-                #  如果已经至少找到2条数据：
-                if (len(tmplist) >= 2):
-                    now = tmplist[0]
-                    previous = tmplist[1]
-                #  只有一条数据:
-                else:
-                    now = tmplist[0]
-                    previous = trackers[start2][j]
-                #  如果10s跳动大于380，则认为是随机值，即光敏损坏。
-                if abs( now - previous) > 380:
-                    brokelist[j] = True
-                else:
-                    brokelist[j] = False
-
-            #  caseB:1分钟以上检测(长周期检测)。
-            if rows > 6:
-                for j in range(16):
-                    #  Sentinel，已在短周期被定位为True的不再检测。
-                    if brokelist[j]:
-                        continue
-                    #  标准差大于STANDARD_STDDEV，波动较大，疑似随机值：
-                    if self.stddev[j] >= STANDARD_STDDEV:
-                        #  检查时间窗内，追踪器数据是否单调递增或递减。
-                        #  单调递增，则由泥变水；
-                        #  单调递减，则由水变泥。
-                        delta = 0.0
-                        for i in range(start1,end1 + 1, -1):
-                            delta += trackers[i][j] - trackers[i - 1][j]
-                        for i in range(start2,end2 + 1, -1):
-                            delta += trackers[i][j] - trackers[i - 1][j]
-                        #  变化值相加后取绝对值，距离900较远说明是随机值，即光敏损坏。
-                        if abs(delta) < 700:
-                            brokelist[j] = True
-                        #  泥位快速升降。
-                        else:
-                            brokelist[j] = False
-        #  更新仪器损坏表。
-        self.brokelist = brokelist
-        return brokelist
+                    self.brokegratings[j] = False
+        return popedvalue  # 返回弹出的一行数据。
 
 
 
@@ -366,47 +389,43 @@ def FuzzyInterval(brokelist, brokegratings, psvalues):
     #  规则：
     #  （1）数据由左向右表示由低到高，即i = 0表示最低处的光敏，i = 15表示最高处的光敏；
     #  （2）泥只可能由下向上，即0是从psvalues数组的左侧开始，特殊情况为最高处有浮泥，浮泥较薄（即最右端一点为0）；
-    #  （3）光敏值小于50为泥；
-    #  （4）光敏值位于[50,200]为泥水混合物；
-    #  （5）光敏值大于200为水；
-    #  （6）光敏有损坏则右移一位。
+    #  （3）光敏值小于50为泥, [50,200]为泥水混合物, 大于200为水；
+    #  （4）光敏有损坏则右移一位。
 
-    #  所有光敏值都小于50。
-    l = 15
+    #  从左向右确定纯泥界面:
+    l = float("-inf")
     for i in range(16):
         #  如果i处的光敏有损坏，则右移动一位。
         if brokelist[i] or brokegratings[i]:
             continue
-        #  确定纯泥界面:
-        if psvalues[i] >= 50:
-            #  如果最低端光敏值即大于50，则认为纯泥界面在最低光敏处。
-            if i == 0:
-                l = 0
-            else:
-                # 如果上一位光敏损坏。
-                if brokelist[i - 1] or brokegratings[i - 1]:
-                    l = i
-                else:  # 如果上一位光敏没有损坏。
-                    l = i - 1
-            break
+        if psvalues[i] <= 50:
+            if i > l:
+                l = i
+    #  所有光敏值都大于50时，即泥位最低的情况。
+    if l == float("-inf"):
+        l = 0
 
-
-    #  所有光敏值都小于200。
-    r = 15
-    for i in range(l, 16):
-        #  如果i处的光敏有损坏，则右移动一位。
+    #  从右向左确定纯泥界面:
+    r = float("inf")
+    for i in range(15, -1, -1):
+        #  如果i处的光敏有损坏，则左移动一位。
         if brokelist[i] or brokegratings[i]:
             continue
-        #  确定泥水混合物界面：
         if psvalues[i] >= 200:
-            #  如果最低端光敏值即大于200，则认为泥水混合物界面在最低光敏处。
-            if i == 0:
-                r = 0
-            else:
+            if i < r:
                 r = i
-            break
+    #  r位是最左侧的大于200的光敏，则r - 1为泥界面。
+    #  所有光敏值都小于200时，即泥位最高的情况。
+    if r == float("inf"):
+        r = 15
+    elif r != 0:
+        r -= 1
+    #  [l, ..., r]组成泥位区间。
+    if l > r:
+        return [r, l]
+    else:  #  当l小于等于r时，[l,r]即为泥位区间。
+        return [l, r]
 
-    return [l, r]
 
 
 def GetMudLvl( inputfile ):
@@ -433,9 +452,6 @@ def GetMudLvl( inputfile ):
             timecount += 1
             ###  测试用  ###
 
-            if timecount == 49927:
-                print("Bianlong")
-
             # 读入光敏数据。
             line = f.readline()  # 读取一行光敏数据（str）。
             #  EOF Sentinel.
@@ -449,7 +465,7 @@ def GetMudLvl( inputfile ):
             #  Collecting the photosensitive values.
             pst.enqueue(psvalues)
             #  纵向检测：检查损坏的光敏。
-            brokelist = pst.Isbroken()
+            brokelist = pst.brokelist
             brokegratings = pst.brokegratings
             #  横向检测：计算泥位区间。
             mudinterval = FuzzyInterval(brokelist, brokegratings, psvalues)
@@ -468,9 +484,9 @@ def GetMudLvl( inputfile ):
                     ws.cell(row = timecount, column = j + 1).fill = \
                         sty.PatternFill(fill_type = "solid", fgColor = "007A378B")
             #  将泥位区间标记为红色。
-            for i in range(mudinterval[0], mudinterval[1] + 1):
-                ws.cell(row = timecount, column = i + 1).fill = \
-                    sty.PatternFill(fill_type = "solid", fgColor = "00FF0000")
+            ws.cell(row=timecount, column=mudinterval[1] + 1).fill = \
+                sty.PatternFill(fill_type="solid", fgColor="00FF0000")
+
         wb.save(inputfile[:-3] + "xlsx")  # 保存为与输入数据文件同名的excel文件。
 
 
@@ -492,7 +508,7 @@ Step3.跟踪污泥区间，连续的污泥区间应该是连续的。
 start = time.time()  # 程序开始时间。
 
 #  预处理后的光敏数据文件名。
-inputfile = "PreDataFull.txt"
+inputfile = "fac5_pool12.txt"
 
 #  调用函数计算泥位。
 #  输出excel文件，用颜色标识泥位区间，损坏的光敏。
