@@ -514,7 +514,7 @@ Step3.过滤异常1 & 2数据，再横向计算泥位。
 start = time.time()  # 程序开始时间。
 
 #  预处理后的光敏数据文件名。
-inputfile = "fac5_pool12.txt"
+inputfile = "fac5_pool12_02.txt"
 
 #  调用函数计算泥位。
 #  输出excel文件，用颜色标识泥位区间，损坏的光敏。
