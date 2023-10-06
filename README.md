@@ -1,110 +1,16 @@
-# SD-Work
-Holds all the programs and work plans of SundayTek.   
-加油SundayTek！
+# The demo of the helper function module which detects bad sensors in our IoT devices
 
-## 2019.03.18 
-<font size = 6>**GOAL: 改善产品质量，提升可靠性。**</font>
+## Issue:
+The accurate positioning of sludge height in the circular reservoir of the wastewater treatment plant is crucial for the plant's operation. Traditional methods require periodic manual visual measurements. The Sludge Positioning App we have developed utilizes 16 sensors installed on underwater equipment to cross-locate the floating sludge's height in the wastewater reservoir. 
+However, issues such as moisture often lead to sensor damage, and if even one sensor malfunctions, it results in the failure of sludge positioning. This compromises the reliability of the product and incurs high maintenance costs.
 
-- <font size = 5> **井盖** </font>
-	- 机械结构
-		-  防盗螺丝，锁孔太大 => 小于2.5mm。
-		-  后盖太厚，开口要小。
-		-  电池盒和数据盒分开。
-		-  螺丝不外漏，标记锁位。
-		-  锁扣换成原来的结构，框量大。  
-		-  井沿有积水，是否考虑去掉。
-		<br/>
-		<br/>
+## Solution: 
+I spent approximately one week observing the data patterns when sensors were damaged. In the second week, I designed a recursive algorithm to pinpoint the malfunctioning sensors. The third week was dedicated to simulating laboratory data, and in the fourth week, I implemented the helper module -- psTrackers. As a result the helper successfully detected bad sensors and ejected bad data as well which led to reducing maintenance intervals from every 2 months to 10 months and improving the overall system stability by 65%.
 
-	- 硬件设备
-		- 井盖磁感中断代码优化为上升沿触发，这样在井盖闭合时，不会复位重启。
-		- 优化井盖电路：直接用MOS管控制NB模组。
-		- 降低功耗（电池要坚持一年才行）：
-			- 直接用MOS管控制NB模组；
-			- 电机锁直接采用12V锂电池供电，去掉升压模块；
-			- 电机锁电源通过MOS管控制通断。
-		- 最新井盖电路兼容两种NB模组插件。   
-		- 无限重启（已解决，刘杰 & 王周）
-			- 原因：开启电源后有抖动，早期的代码并没有将抖动考虑进去。
-		<br/> 
-		<br/>
-	- 软件 & 服务器 
-		- 上线慢，请求超时。
-			- 考虑是否有跨网丢包问题； 
-			- 考虑服务器购买实时流量。
-		- 不能上线，上线转休眠时间不稳定。
-		- app状态和真实状态总是有时间延迟，且延迟时间不一定。
-		- 安全性能：
-			- CRSF跨站攻击；
-			- RSA加密；
-			- session与唯一设备关联，双重验证。
-		<br/>  
-		<br/>
+## Details: 
+* The two-dimensional sensor data have time on the vertical axis and real-time photosensitive data from 16 sensors of a specific instrument on the horizontal axis.
+* Our psTrackers class employs two filters.
+	* The first filter is similar to a Bloom filter, which preliminarily screens problematic sensors based on the historical data variance and monotonicity of a particular sensor.
+ 	* The second filter assesses the lateral data from the 16 sensors using fuzzy monotonicity judgments. Given the characteristics of sludge and water, at a specific point in time, the data from the 16 sensors of the same instrument should exhibit fuzzy monotonicity. We use a recursive filter called L2RMoving to assess fuzzy monotonicity from left to right.
 
----
-- <font size = 5> **污水厂——泥位检测** </font>
-	- 适配器损坏：找数据规律。
-		- 6个小值1个大值？
-	- 找出光敏异常的所有情况及其对应规律：
-		- 最高处的光敏被泥覆盖了
-		- 光栅损坏
-		- 光敏损坏，随机值？受左右电流影响？
-
-
-
-## 2019.03.25
-与阿里云技术工程师沟通：  
-1. 根据历史使用记录来看，他认为1兆带宽足矣，卡顿可能由其他方面引起。如果实在不放心，可以申请升级1天带宽，自己测试一下，有没有变快。  
-2. 目前在阿里云上租赁了2台服务器，污水+液位共用一台，井盖使用一台。井盖这台服务器是1核2G内存的，是阿里云最便宜也是最基础的服务器，一般多用于学生练习，不适合面向产品。因为当其CPU使用率超过15%时就会产生卡顿现象，今天上午办公室的一部井盖无限重启就造成了该服务器CPU使用率达到25%，也就是说当我们一部井盖开始无限重启时就可能引起其他井盖的操作卡顿，这可能是引起井盖操作卡顿的原因之一，所以建议更换这台服务器。  
-3. 阿里云技术工程师简单测试，表示我们并没有什么安全防护，和艾灸刘总说的一样。  
-
-综上 ，
- 
-- 我们首先做简单 & 重要的事：应更换/升级服务器，改善因为cpu使用率引起的卡顿现象； 
-- 其次，继续测试井盖无限重启的原因；  
-- 最后是补充软件的安全防护。  
-<br/>
-
-
-
-
-<font size = 6 color = red >**PHP调试器**</font>
-
-- socketlog：TP5.0已内置。
-- XHProf(facebook)：被动分析器。
-- 主动分析器：
-	- ydb，太老了；
-	- ytrace，暂停维护了；
-	- Xdebug。  
-		<font color = red >**Xdebug出现问题：**  
-		
-		- 本地  
-			- port 9001,只停第一行，后面断点不停；
-			- 其他port，完全不停。</font>    
-			
-				**尝试解决不在断点停**
-				
-				- 改php.ini配置 ×
-				- 改localhost为ip  ×
-				- 重装Xdebug  ×
-				- 查log  ×
-				- mapping到server  × 
-				- 修改apache的根目录  ×
-				- 使用php 7.1 待测  
-				<br/>
-
-		- <font color = red >HUAWEI CLOUD
-			- 链接9001 timeout。</font>
-
-## 2019.03.27
-**管网公司意见**  
-**现有井盖不动，新做一套井盖，新井盖要求：**
-
-1. 不带后盖；
-2. 所有线用黑色热缩管套线；
-3. 电池盒增加一倍，满足一年的用电量；
-4. 井圈上沿能够实现旋转落锁的限位作用，在此前提下尽量低（3mm左右）；
-5. 采用M2防盗螺丝，扳手对角1.6mm，开孔2mm（最低要求不高于2.5mm）；
-6. 采用塑料把手；
-7. 防水按钮改为8mm孔径；
 		
